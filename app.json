@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "SmartCare Caregiver",
+    "slug": "smartcare-caregiver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#0B1230"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ae.smartcare.caregiver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SmartCare Caregiver shares your location with the patient while you're on your way to a home care visit."
+      }
+    },
+    "android": {
+      "package": "ae.smartcare.caregiver",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SmartCare Caregiver shares your location with the patient while you're on your way to a home care visit."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#4F46E5"
+        }
+      ]
+    ]
+  }
+}
