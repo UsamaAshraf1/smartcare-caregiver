@@ -16,10 +16,20 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/**
+ * Spec §7's 2026-09-16 revision confirmed the exact `kind` values the
+ * three new caregiver-facing triggers write: `homecare_new_job`,
+ * `homecare_assigned`, `homecare_cancelled`. My earlier guesses
+ * (`new_job`/`cancelled`/`completed`) never actually matched anything
+ * real — replaced now that the spec gives the real strings. Anything
+ * that still doesn't match (an older row, or a future kind) falls back
+ * to the generic bell below, so nothing breaks either way — title/body
+ * always come from the notification row regardless of icon mapping.
+ */
 const KIND_ICON: Record<string, { icon: 'bell' | 'truck' | 'alertTriangle' | 'checkWide'; bg: string; color: string }> = {
-  new_job: { icon: 'truck', bg: colors.primarySoft, color: colors.primary },
-  cancelled: { icon: 'alertTriangle', bg: colors.dangerSoft, color: colors.dangerDark },
-  completed: { icon: 'checkWide', bg: colors.successSoft, color: colors.successDark },
+  homecare_new_job: { icon: 'truck', bg: colors.primarySoft, color: colors.primary },
+  homecare_assigned: { icon: 'checkWide', bg: colors.successSoft, color: colors.successDark },
+  homecare_cancelled: { icon: 'alertTriangle', bg: colors.dangerSoft, color: colors.dangerDark },
 };
 
 export default function NotificationsScreen() {

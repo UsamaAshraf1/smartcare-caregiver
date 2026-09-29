@@ -18,6 +18,7 @@ import { SessionProvider, useSession } from './src/state/session';
 import { ProfileProvider } from './src/state/profile';
 import { NotificationsProvider } from './src/state/notifications';
 import { AppAlertHost } from './src/components/AppAlert';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { TabBar } from './src/components/TabBar';
 import type { RootStackParamList, TabParamList } from './src/navigation/types';
 
@@ -28,6 +29,8 @@ import VisitDetailScreen from './src/screens/queue/VisitDetailScreen';
 import NotificationsScreen from './src/screens/notifications/NotificationsScreen';
 import ProfileScreen from './src/screens/profile/ProfileScreen';
 import EditProfileScreen from './src/screens/profile/EditProfileScreen';
+import VitalsScreen from './src/screens/queue/VitalsScreen';
+import ScheduleScreen from './src/screens/schedule/ScheduleScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -63,6 +66,8 @@ function RootNavigator() {
           <Stack.Screen name="Tabs" component={Tabs} />
           <Stack.Screen name="VisitDetail" component={VisitDetailScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+          <Stack.Screen name="Vitals" component={VitalsScreen} />
+          <Stack.Screen name="Schedule" component={ScheduleScreen} />
         </Stack.Group>
       )}
     </Stack.Navigator>
@@ -88,17 +93,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SessionProvider>
-        <ProfileProvider>
-          <NotificationsProvider>
-            <StatusBar style="dark" />
-            <NavigationContainer>
-              <RootNavigator />
-            </NavigationContainer>
-            <AppAlertHost />
-          </NotificationsProvider>
-        </ProfileProvider>
-      </SessionProvider>
+      <ErrorBoundary>
+        <SessionProvider>
+          <ProfileProvider>
+            <NotificationsProvider>
+              <StatusBar style="dark" />
+              <NavigationContainer>
+                <RootNavigator />
+              </NavigationContainer>
+              <AppAlertHost />
+            </NotificationsProvider>
+          </ProfileProvider>
+        </SessionProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

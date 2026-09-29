@@ -88,6 +88,78 @@ Every tappable surface gives real feedback rather than a flat state change:
 - **Entrance animation** — new queue cards, notifications, and profile sections fade + rise in once on mount (`motion.tsx#FadeInUp`), staggered slightly per item; existing items don't re-animate on every poll since they're keyed by a stable id.
 - **Haptics** — light tap feedback on every action (claim, toggle, advance status, refresh), success/warning haptics on the outcome (`src/lib/haptics.ts`). Silently no-ops on web/simulators that don't support it.
 
+## New in this pass: spec revision 2026-09-16
+
+Five previously-"needs backend work" items got built and are now wired in,
+without touching anything already working:
+
+- **Patient medical basics + contact** — `VisitDetailScreen` now calls
+  `get_home_care_patient_info(p_visit_id)` (spec §6) while a visit is
+  matched/en_route/in_progress, and shows blood type, conditions,
+  allergies, and Call/Email buttons (`tel:`/`mailto:`). Replaces the old
+  "not available yet" note. Access lapses server-side once a visit is
+  completed/cancelled — the screen shows a plain note instead of an error
+  in that case, matching the spec's own intent (data minimization, not a
+  bug to route around).
+- **Structured vitals** — a new **Vitals** screen (`src/screens/queue/VitalsScreen.tsx`),
+  reached from a "Record vitals" button that only shows while a visit is
+  `in_progress` (matching the RLS insert rule). Records to and reads from
+  the new `home_care_visit_vitals` table (spec §9).
+- **Self-service scheduling** — a new **Schedule** screen (`src/screens/schedule/ScheduleScreen.tsx`),
+  reached from Profile → "My schedule". Manage recurring weekly
+  availability (`home_care_schedule_templates`), generate concrete
+  bookable slots from it (`generate_home_care_slots`), and see upcoming
+  slots and their status (spec §10).
+- **Own rating** — Profile now shows average rating and rated-visit count
+  via `get_my_caregiver_rating()` (spec §11).
+- **Caregiver push notifications** — no app-side call needed (the spec
+  confirms the existing inbox/push pipeline just receives new `kind`
+  values now); `NotificationsScreen`'s icon mapping was updated to the
+  exact confirmed strings (`homecare_new_job`, `homecare_assigned`,
+  `homecare_cancelled`) so the right icon shows instead of falling back
+  to a generic bell.
+
+Two real bugs got caught and fixed while wiring this up, both because the
+fuller spec revision included actual request/response examples: **both**
+`get_home_care_patient_info` **and** `get_my_caregiver_rating` return a
+row *set* (a PostgREST array — one row when entitled, `[]` when not) —
+not a single object like the first spec description implied. Both are
+now unwrapped correctly (`state/homecare.tsx`). Also: `conditions` and
+`allergies` on the patient-info response are each an array of strings,
+not one combined string — fixed in both the type and the rendering.
+
+Explicitly **not** touched: background location tracking, map UI, and
+location history — still flagged "needs a product decision" in the spec
+itself (map provider, ping interval, retention), so still out of scope
+here on purpose, same as the crash-fix pass before it.
+
+## Crash fix: en_route → in_progress ("I've arrived")
+
+Tapping "I've arrived" while sharing location could crash the app. Root
+cause was two related issues in the location-tracking code, both fixed:
+
+1. `openVisitLocationBroadcaster`'s `close()` never reset its internal
+   `ready` flag, so a GPS ping already in flight when the channel tears
+   down could still try to `send()` on it.
+2. Neither that `send()` call nor the cleanup that stops the location
+   watcher (`watchRef.current?.remove()`) nor the channel teardown
+   (`broadcasterRef.current?.close()`) were wrapped in try/catch. Any of
+   those throwing synchronously inside a `useEffect`, with no error
+   boundary anywhere in the app, had nowhere to go but a hard crash.
+
+Fixed in `src/lib/visitLocation.ts` (every channel call now try/catch-
+wrapped, `ready` reset on close) and `src/screens/queue/VisitDetailScreen.tsx`
+(the stop/start logic consolidated into one `stopLocationTracking()`
+helper, itself wrapped, plus a check for the case where the visit status
+changes while the async permission/watch setup is still in flight).
+
+Also added `src/components/ErrorBoundary.tsx`, wrapping the whole app in
+`App.tsx` — a general safety net so a future error like this degrades to
+a "Try again" screen instead of a hard crash. It only catches render/
+lifecycle errors, not async or event-handler errors (React's error
+boundaries never do) — which is exactly why the try/catch fixes above
+still matter on their own.
+
 ## Known dev-sandbox quirk (fixed here)
 
 VisitDetailScreen used to re-fetch the visit by id (`home_care_visits`

@@ -19,11 +19,17 @@
     "android": {
       "package": "ae.smartcare.caregiver",
       "softwareKeyboardLayoutMode": "resize",
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,6 +47,12 @@
           "color": "#4F46E5"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "97d9ef27-c6b9-4076-8321-8d066f44b1f5"
+      }
+    },
+    "owner": "usama_ashraf1122"
   }
 }

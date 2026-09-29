@@ -4,7 +4,8 @@
  * caller's own caregiver_type per spec §3). Status only ever moves forward
  * through the RPCs below — there's no generic UPDATE grant on
  * home_care_visits, so this module never issues a raw `.update()` on it.
- * See ../../home_care_provider_app_spec.docx sections 3–6.
+ * See ../../home_care_provider_app_spec_2.docx sections 3–6, 11 (revised
+ * 2026-09-16 — patient-info and rating RPCs below are new in that revision).
  *
  * Two booking paths feed this table (see infra migration 011's comment on
  * `staff_slot_id`): the open self-claim queue (`status='requested'` until
@@ -116,6 +117,65 @@ export async function fetchFamilyMember(familyMemberId: string): Promise<FamilyM
     return null;
   }
   return data as FamilyMember | null;
+}
+
+/**
+ * Spec §6 (2026-09-16 revision) — everything a caregiver is allowed to see
+ * about who they're visiting, in one call: `get_home_care_patient_info(p_visit_id)`.
+ * Access is scoped to the visit's active lifecycle server-side (matched /
+ * en_route / in_progress) — it lapses once the visit is completed or
+ * cancelled, so this is only ever called while a visit is still active
+ * (see VisitDetailScreen). Supersedes the old two-call pattern of fetching
+ * the visit, then separately calling fetchFamilyMember above for dependent
+ * details — this one RPC now returns both in a single response.
+ *
+ * Per the spec's own request/response example, this RPC returns a row
+ * *set* — PostgREST/supabase-js hands back an array (one row when
+ * entitled, `[]` when not, not an error) — not a single object. `conditions`
+ * and `allergies` are each an array of strings, not one combined string.
+ */
+export type PatientInfo = {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  phone: string | null;
+  email: string | null;
+  dob: string | null;
+  gender: 'female' | 'male' | 'other' | null;
+  blood_type: string | null;
+  conditions: string[] | null;
+  allergies: string[] | null;
+  /** Set only when the visit is for a dependent rather than the account holder — same intent as FamilyMember above, inlined here instead of a separate call. */
+  dependent_first_name: string | null;
+  dependent_last_name: string | null;
+  dependent_relation: string | null;
+};
+
+export async function fetchPatientInfo(visitId: string): Promise<PatientInfo | null> {
+  const { data, error } = await supabase.rpc('get_home_care_patient_info', { p_visit_id: visitId });
+  if (error) {
+    // Expected once the visit is completed/cancelled — access lapses by
+    // design (see comment above), not a bug. Anything else still just
+    // logs and falls back to showing what the visit row itself has.
+    console.warn('[homecare] failed to load patient info:', error.message);
+    return null;
+  }
+  // `[]` (not entitled) and a genuinely empty result both land here as null.
+  const rows = (data ?? []) as PatientInfo[];
+  return rows[0] ?? null;
+}
+
+/** Spec §11 — the caregiver's own aggregate rating, across every visit that's been rated. Also returns a row set — see PatientInfo's comment above; unwrapped the same way. */
+export type CaregiverRating = { average_rating: number | null; rating_count: number };
+
+export async function fetchMyCaregiverRating(): Promise<CaregiverRating | null> {
+  const { data, error } = await supabase.rpc('get_my_caregiver_rating');
+  if (error) {
+    console.warn('[homecare] failed to load caregiver rating:', error.message);
+    return null;
+  }
+  const rows = (data ?? []) as CaregiverRating[];
+  return rows[0] ?? null;
 }
 
 /** Spec §3 "Claim an open job" — POST /rpc/claim_home_care_visit. */

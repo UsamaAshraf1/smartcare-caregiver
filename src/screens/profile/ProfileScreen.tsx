@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, Animated, ScrollView } from 'react-native';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Screen, ScreenHeader, Card, Avatar, Tag, Toggle, OutlineButton } from '../../components/ui';
+import { Screen, ScreenHeader, Card, Avatar, Tag, Toggle, OutlineButton, ListRow } from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import { FadeInUp, Pulse, usePressScale } from '../../components/motion';
 import { useProfile, fullName, initials, CAREGIVER_TYPE_LABEL } from '../../state/profile';
 import { useSession } from '../../state/session';
+import { fetchMyCaregiverRating, CaregiverRating } from '../../state/homecare';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, warningHaptic } from '../../lib/haptics';
 import { colors, t } from '../../theme';
@@ -36,7 +37,12 @@ export default function ProfileScreen({ navigation }: Props) {
   const { profile, setOnDuty } = useProfile();
   const { signOut } = useSession();
   const [togglingDuty, setTogglingDuty] = useState(false);
+  const [rating, setRating] = useState<CaregiverRating | null>(null);
   const onDuty = !!profile?.caregiver_active;
+
+  useEffect(() => {
+    fetchMyCaregiverRating().then(setRating);
+  }, []);
 
   const onToggleDuty = async () => {
     if (!profile) return;
@@ -66,6 +72,15 @@ export default function ProfileScreen({ navigation }: Props) {
               <Text style={t(16, 800)}>{fullName(profile)}</Text>
               {!!profile?.caregiver_type && <Tag label={CAREGIVER_TYPE_LABEL[profile.caregiver_type] ?? profile.caregiver_type} />}
             </View>
+            {!!rating && rating.rating_count > 0 && (
+              <View style={{ alignItems: 'center', gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Icon name="star" size={13} color={colors.warning} strokeWidth={2} />
+                  <Text style={t(14, 800)}>{rating.average_rating?.toFixed(1) ?? '—'}</Text>
+                </View>
+                <Text style={t(10.5, 400, colors.textFaint)}>{`${rating.rating_count} rated`}</Text>
+              </View>
+            )}
           </Card>
         </FadeInUp>
 
@@ -98,6 +113,12 @@ export default function ProfileScreen({ navigation }: Props) {
                 <Text style={t(12.5, 700)}>{profile?.caregiver_vehicle ?? '—'}</Text>
               </View>
             </View>
+          </Card>
+        </FadeInUp>
+
+        <FadeInUp delay={120}>
+          <Card padding={0} style={{ overflow: 'hidden' }}>
+            <ListRow icon="calendar" label="My schedule" meta="Availability & slots" divider={false} onPress={() => navigation.navigate('Schedule')} />
           </Card>
         </FadeInUp>
 

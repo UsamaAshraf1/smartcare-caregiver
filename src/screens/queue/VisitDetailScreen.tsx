@@ -16,14 +16,21 @@
  * location (no background tracking for v1 — spec §5 flags that as "needs
  * backend work") and broadcasts it over Supabase Realtime for the
  * patient's tracking screen to pick up.
+ *
+ * Patient/dependent identity and medical basics come from
+ * `get_home_care_patient_info` (spec §6, 2026-09-16 revision) — one call,
+ * fetched only while the visit is in an active lifecycle state
+ * (matched/en_route/in_progress), matching the RPC's own server-side
+ * scoping: access lapses once a visit is completed or cancelled, by
+ * design, not a bug to work around.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput } from 'react-native';
+import { View, Text, ScrollView, TextInput, Linking } from 'react-native';
 import * as Location from 'expo-location';
-import { Card, PrimaryButton, OutlineButton, Screen, ScreenHeader, Note, Avatar, Tag } from '../../components/ui';
+import { Card, PrimaryButton, OutlineButton, InlineButton, Screen, ScreenHeader, Note, Avatar, Tag } from '../../components/ui';
 import { Pulse } from '../../components/motion';
 import { Icon } from '../../components/Icon';
-import { fetchFamilyMember, updateHomeCareVisitStatus, cancelHomeCareVisit, HomeCareVisit, FamilyMember, PAYMENT_STATUS_LABEL } from '../../state/homecare';
+import { updateHomeCareVisitStatus, cancelHomeCareVisit, fetchPatientInfo, HomeCareVisit, PatientInfo, PAYMENT_STATUS_LABEL } from '../../state/homecare';
 import { openVisitLocationBroadcaster } from '../../lib/visitLocation';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, successHaptic, warningHaptic } from '../../lib/haptics';
@@ -82,50 +89,86 @@ function StatusStepper({ status }: { status: HomeCareVisit['status'] }) {
   );
 }
 
-function relationInitials(member: FamilyMember) {
-  return [member.first_name?.[0], member.last_name?.[0]].filter(Boolean).join('').toUpperCase() || '?';
+function initialsOf(first: string | null, last: string | null) {
+  return [first?.[0], last?.[0]].filter(Boolean).join('').toUpperCase() || '?';
 }
 
 export default function VisitDetailScreen({ navigation, route }: ScreenProps<'VisitDetail'>) {
   const [visit, setVisit] = useState<HomeCareVisit>(route.params.visit);
-  const [dependent, setDependent] = useState<FamilyMember | null>(null);
+  const [patientInfo, setPatientInfo] = useState<PatientInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [locationOn, setLocationOn] = useState(false);
   const broadcasterRef = useRef<ReturnType<typeof openVisitLocationBroadcaster> | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
 
-  useEffect(() => {
-    if (visit.family_member_id) fetchFamilyMember(visit.family_member_id).then(setDependent);
-  }, [visit.family_member_id]);
+  /**
+   * Stops the location watcher and closes the broadcast channel. Wrapped in
+   * try/catch because both are calls into native/socket objects — the exact
+   * crash this once caused: tapping "I've arrived" tears these down from a
+   * useEffect with no error boundary anywhere in the app, so a native throw
+   * here (e.g. `.remove()` on a subscription the OS already tore down) had
+   * nowhere to go but a hard crash instead of a caught, logged no-op.
+   */
+  const stopLocationTracking = () => {
+    try {
+      watchRef.current?.remove();
+    } catch (e) {
+      console.warn('[visit-detail] failed to stop location watch:', e);
+    }
+    watchRef.current = null;
+    broadcasterRef.current?.close(); // already try/catch-wrapped internally, see visitLocation.ts
+    broadcasterRef.current = null;
+  };
+
+  const activeLifecycle = visit.status === 'matched' || visit.status === 'en_route' || visit.status === 'in_progress';
 
   useEffect(() => {
-    return () => {
-      watchRef.current?.remove();
-      broadcasterRef.current?.close();
-    };
+    if (!activeLifecycle) {
+      setPatientInfo(null);
+      return;
+    }
+    fetchPatientInfo(visit.id).then(setPatientInfo);
+    // Re-fetches on every status change within the active lifecycle too —
+    // harmless (same RPC, same visit id) and means this doesn't need its
+    // own separate "did I already load this" tracking.
+  }, [visit.id, activeLifecycle]);
+
+  useEffect(() => {
+    return () => stopLocationTracking();
   }, []);
 
   useEffect(() => {
     if (visit.status !== 'en_route') {
-      watchRef.current?.remove();
-      watchRef.current = null;
-      broadcasterRef.current?.close();
-      broadcasterRef.current = null;
+      stopLocationTracking();
       setLocationOn(false);
       return;
     }
     let cancelled = false;
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted' || cancelled) return;
-      broadcasterRef.current = openVisitLocationBroadcaster(visit.id);
-      watchRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 25 },
-        (position) => {
-          broadcasterRef.current?.send({ lat: position.coords.latitude, lng: position.coords.longitude, ts: position.timestamp });
-        },
-      );
-      if (!cancelled) setLocationOn(true);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted' || cancelled) return;
+        broadcasterRef.current = openVisitLocationBroadcaster(visit.id);
+        const subscription = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 25 },
+          (position) => {
+            broadcasterRef.current?.send({ lat: position.coords.latitude, lng: position.coords.longitude, ts: position.timestamp });
+          },
+        );
+        // The status could have flipped away from en_route while the
+        // awaits above were in flight — stopLocationTracking() would then
+        // already have run once (against null refs, harmlessly) before
+        // this subscription even existed. Don't resurrect it: tear it down
+        // immediately instead of stashing it in the ref.
+        if (cancelled) {
+          subscription.remove();
+          return;
+        }
+        watchRef.current = subscription;
+        setLocationOn(true);
+      } catch (e) {
+        console.warn('[visit-detail] failed to start location tracking:', e);
+      }
     })();
     return () => {
       cancelled = true;
@@ -171,6 +214,20 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
     ]);
   };
 
+  const onCall = () => {
+    if (patientInfo?.phone) Linking.openURL(`tel:${patientInfo.phone}`).catch(() => showAlert('Could not open phone app', undefined));
+  };
+  const onEmail = () => {
+    if (patientInfo?.email) Linking.openURL(`mailto:${patientInfo.email}`).catch(() => showAlert('Could not open email app', undefined));
+  };
+
+  const hasDependent = !!patientInfo?.dependent_first_name;
+  const visiteeName = hasDependent
+    ? `${patientInfo?.dependent_first_name} ${patientInfo?.dependent_last_name ?? ''}`.trim()
+    : patientInfo
+    ? `${patientInfo.first_name} ${patientInfo.last_name}`
+    : null;
+
   return (
     <Screen>
       <ScreenHeader title="Visit" subtitle={visit.status.replace('_', ' ')} onBack={navigation.goBack} />
@@ -197,13 +254,53 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
           </View>
         </Card>
 
-        {!!dependent && (
+        {!!visiteeName && (
           <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Avatar initials={relationInitials(dependent)} />
+            <Avatar initials={initialsOf(hasDependent ? patientInfo?.dependent_first_name ?? null : patientInfo?.first_name ?? null, hasDependent ? patientInfo?.dependent_last_name ?? null : patientInfo?.last_name ?? null)} />
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={t(14, 800)}>{`${dependent.first_name} ${dependent.last_name}`}</Text>
-              <Text style={t(12, 400, colors.textMuted)}>{dependent.relation}{dependent.dob ? ` · DOB ${dependent.dob}` : ''}</Text>
+              <Text style={t(14, 800)}>{visiteeName}</Text>
+              <Text style={t(12, 400, colors.textMuted)}>
+                {hasDependent ? patientInfo?.dependent_relation ?? 'Dependent' : 'Account holder'}
+                {patientInfo?.dob ? ` · DOB ${patientInfo.dob}` : ''}
+              </Text>
+              {hasDependent && (
+                <Text style={t(11, 400, colors.textFaint)}>{`Booked by ${patientInfo?.first_name} ${patientInfo?.last_name}`}</Text>
+              )}
             </View>
+          </Card>
+        )}
+
+        {!!patientInfo && (patientInfo.phone || patientInfo.email) && (
+          <Card style={{ gap: 10 }}>
+            <Text style={t(13, 700, colors.textBody)}>Contact</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {!!patientInfo.phone && <InlineButton label="Call" onPress={onCall} variant="solid" height={42} fontSize={13} />}
+              {!!patientInfo.email && <InlineButton label="Email" onPress={onEmail} variant="outline" height={42} fontSize={13} />}
+            </View>
+          </Card>
+        )}
+
+        {!!patientInfo && (patientInfo.blood_type || patientInfo.conditions?.length || patientInfo.allergies?.length) && (
+          <Card style={{ gap: 10 }}>
+            <Text style={t(13, 700, colors.textBody)}>Medical basics</Text>
+            {!!patientInfo.blood_type && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Blood type</Text>
+                <Text style={t(12.5, 700)}>{patientInfo.blood_type}</Text>
+              </View>
+            )}
+            {!!patientInfo.conditions?.length && (
+              <View style={{ gap: 2 }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Conditions</Text>
+                <Text style={t(12.5, 600, colors.textBody)}>{patientInfo.conditions.join(', ')}</Text>
+              </View>
+            )}
+            {!!patientInfo.allergies?.length && (
+              <View style={{ gap: 2, backgroundColor: colors.dangerSoft, borderRadius: radius.sm, padding: 10 }}>
+                <Text style={t(11.5, 700, colors.dangerDark)}>⚠ Allergies</Text>
+                <Text style={t(12.5, 700, colors.dangerDark)}>{patientInfo.allergies.join(', ')}</Text>
+              </View>
+            )}
           </Card>
         )}
 
@@ -228,9 +325,15 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
           </Card>
         )}
 
-        <Note tone="neutral" icon="infoCircle">
-          Medical basics and a direct call/message to the patient aren't available in this app yet — the backend doesn't expose that data to caregivers today (needs a new RLS policy). Coordinate through your admin if you need either before the visit.
-        </Note>
+        {visit.status === 'in_progress' && (
+          <OutlineButton label="Record vitals" onPress={() => navigation.navigate('Vitals', { visitId: visit.id })} height={48} fontSize={14} />
+        )}
+
+        {!activeLifecycle && (
+          <Note tone="neutral" icon="infoCircle">
+            Patient details are no longer available for a completed or cancelled visit — access is scoped to the active visit only.
+          </Note>
+        )}
       </ScrollView>
 
       <View style={{ paddingHorizontal: 22, paddingBottom: 24, gap: 10 }}>
