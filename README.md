@@ -160,6 +160,27 @@ but the app wasn't using it yet:
   doesn't copy the email onto `profiles.email`, so it falls back to the
   sign-in email.
 
+## Past visits and saved notes: 2026-09-30
+
+- **Past visits** — a new screen (`src/screens/queue/PastVisitsScreen.tsx`),
+  reached from the Queue screen's "Past visits" link and from Profile. It
+  lists completed and cancelled visits, newest first (latest 50), with the
+  service, fee, the patient's rating and any cancellation reason. There's no
+  RPC for this, so it reads `home_care_visits` directly, which RLS allows
+  for the visit's own caregiver. That path depends on migration 033's
+  recursion fix being live, and it shows a "couldn't load" note on error
+  rather than an empty list. Tapping a visit opens the usual visit detail,
+  which for a finished visit now shows its note, rating or cancellation
+  reason read-only.
+- **Visit notes survive leaving the screen** — the in-progress note is saved
+  on the device as it's typed (`src/lib/visitNotesDraft.ts`) and restored on
+  return, including after the app is killed. It still reaches the server
+  only with "Complete visit": the backend has no call that saves notes on
+  their own (`notes` is only the optional `p_notes` of
+  `update_home_care_visit_status`). Saving to the server mid-visit, so the
+  note is safe if the phone is lost or the caregiver switches devices,
+  needs a small new backend RPC.
+
 ## Crash fix: en_route → in_progress ("I've arrived")
 
 Tapping "I've arrived" while sharing location could crash the app. Root

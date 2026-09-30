@@ -14,7 +14,7 @@
  * re-trigger on every poll).
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, Pressable } from 'react-native';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -124,7 +124,18 @@ export default function QueueScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={t(13, 700, colors.textBody)}>My visits</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={t(13, 700, colors.textBody)}>My visits</Text>
+          <Pressable
+            onPress={() => {
+              tapHaptic();
+              navigation.navigate('PastVisits');
+            }}
+            hitSlop={8}
+          >
+            <Text style={t(12.5, 800, colors.primary)}>Past visits</Text>
+          </Pressable>
+        </View>
         {mine.length === 0 ? (
           <Text style={t(12.5, 400, colors.textFaint)}>No visits assigned yet. New ones you're matched to will show up here.</Text>
         ) : (

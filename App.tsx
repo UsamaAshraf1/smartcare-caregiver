@@ -35,6 +35,7 @@ import ProfileScreen from './src/screens/profile/ProfileScreen';
 import EditProfileScreen from './src/screens/profile/EditProfileScreen';
 import VitalsScreen from './src/screens/queue/VitalsScreen';
 import ScheduleScreen from './src/screens/schedule/ScheduleScreen';
+import PastVisitsScreen from './src/screens/queue/PastVisitsScreen';
 
 configureForegroundNotifications();
 
@@ -84,6 +85,7 @@ function RootNavigator() {
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
           <Stack.Screen name="Vitals" component={VitalsScreen} />
           <Stack.Screen name="Schedule" component={ScheduleScreen} />
+          <Stack.Screen name="PastVisits" component={PastVisitsScreen} />
         </Stack.Group>
       )}
     </Stack.Navigator>

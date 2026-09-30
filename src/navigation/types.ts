@@ -15,6 +15,8 @@ export type RootStackParamList = {
   // Visit detail → record/view vitals (spec §9) — only reachable while a
   // visit is in_progress, so the visit id alone is enough context.
   Vitals: { visitId: string };
+  // Queue / Profile → completed and cancelled visits
+  PastVisits: undefined;
   // Profile → edit
   EditProfile: undefined;
   // Profile → self-service weekly availability + slot generation (spec §10)

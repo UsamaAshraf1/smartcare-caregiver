@@ -126,7 +126,8 @@ export default function ProfileScreen({ navigation }: Props) {
 
         <FadeInUp delay={120}>
           <Card padding={0} style={{ overflow: 'hidden' }}>
-            <ListRow icon="calendar" label="My schedule" meta="Availability & slots" divider={false} onPress={() => navigation.navigate('Schedule')} />
+            <ListRow icon="calendar" label="My schedule" meta="Availability & slots" onPress={() => navigation.navigate('Schedule')} />
+            <ListRow icon="clock" label="Past visits" meta="Completed & cancelled" divider={false} onPress={() => navigation.navigate('PastVisits')} />
           </Card>
         </FadeInUp>
 

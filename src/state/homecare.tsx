@@ -122,6 +122,36 @@ export async function fetchMyCaregiverQueue(): Promise<HomeCareVisit[]> {
 }
 
 /**
+ * This caregiver's finished visits (completed or cancelled), newest first —
+ * the Past visits screen. There's no RPC for this: `my_caregiver_queue()`
+ * deliberately stops at active visits, so this reads the table directly,
+ * which `home_care_visits_select` (infra migration 013) allows for the
+ * visit's own caregiver. That direct-read path is the one the
+ * profiles↔home_care_visits RLS recursion used to 500 (fixed server-side
+ * by migration 033), so the error is returned rather than swallowed — the
+ * screen says "couldn't load" instead of an empty list that reads as
+ * "you've never done a visit".
+ */
+export async function fetchMyPastVisits(limit = 50): Promise<{ visits: HomeCareVisit[]; error?: string }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return { visits: [] };
+  const { data, error } = await supabase
+    .from('home_care_visits')
+    .select('*')
+    .eq('caregiver_user_id', session.user.id)
+    .in('status', ['completed', 'cancelled'])
+    .order('scheduled_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.warn('[homecare] failed to load past visits:', error.message);
+    return { visits: [], error: error.message };
+  }
+  return { visits: (data ?? []) as HomeCareVisit[] };
+}
+
+/**
  * One visit by id, straight from the table. Not currently called from any
  * screen — VisitDetailScreen is handed the visit object it already has
  * from the queue list instead (see its comment), because this exact query

@@ -23,6 +23,13 @@
  * (matched/en_route/in_progress), matching the RPC's own server-side
  * scoping: access lapses once a visit is completed or cancelled, by
  * design, not a bug to work around.
+ *
+ * The in-progress visit note is saved on the device as it's typed
+ * (lib/visitNotesDraft.ts) and restored if the caregiver leaves and comes
+ * back — the server only receives it with "Complete visit", since there's
+ * no backend call that saves notes on their own. The same screen also
+ * serves Past visits: a finished visit shows its note, rating or
+ * cancellation reason read-only, with no actions.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Linking } from 'react-native';
@@ -32,6 +39,7 @@ import { Pulse } from '../../components/motion';
 import { Icon } from '../../components/Icon';
 import { updateHomeCareVisitStatus, cancelHomeCareVisit, fetchPatientInfo, fetchHomeCareServices, HomeCareService, HomeCareVisit, PatientInfo, PAYMENT_STATUS_LABEL } from '../../state/homecare';
 import { openVisitLocationBroadcaster } from '../../lib/visitLocation';
+import { loadNotesDraft, saveNotesDraft, clearNotesDraft } from '../../lib/visitNotesDraft';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, successHaptic, warningHaptic } from '../../lib/haptics';
 import { colors, radius, t } from '../../theme';
@@ -99,6 +107,8 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
   const [service, setService] = useState<HomeCareService | null>(null);
   const [busy, setBusy] = useState(false);
   const [locationOn, setLocationOn] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const typedRef = useRef(false);
   const broadcasterRef = useRef<ReturnType<typeof openVisitLocationBroadcaster> | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
 
@@ -133,6 +143,26 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
     // harmless (same RPC, same visit id) and means this doesn't need its
     // own separate "did I already load this" tracking.
   }, [visit.id, activeLifecycle]);
+
+  useEffect(() => {
+    if (visit.status !== 'in_progress') return;
+    loadNotesDraft(visit.id).then((draft) => {
+      // Only if the caregiver hasn't started typing in the meantime, and the
+      // draft actually adds something over what the server already has.
+      if (draft == null || typedRef.current || draft === (visit.notes ?? '')) return;
+      setVisit((v) => ({ ...v, notes: draft }));
+      setDraftRestored(true);
+    });
+    // Mount-only: a draft only ever exists for a visit that was in_progress
+    // when the caregiver last left this screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onNotesChange = (text: string) => {
+    typedRef.current = true;
+    setVisit((v) => ({ ...v, notes: text }));
+    saveNotesDraft(visit.id, text);
+  };
 
   useEffect(() => {
     fetchHomeCareServices().then((catalog) => setService(catalog[visit.service_id] ?? null));
@@ -195,7 +225,10 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
     }
     successHaptic();
     setVisit(updated);
-    if (updated.status === 'completed') navigation.goBack();
+    if (updated.status === 'completed') {
+      clearNotesDraft(visit.id);
+      navigation.goBack();
+    }
   };
 
   const onCancel = () => {
@@ -212,6 +245,7 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
             showAlert('Could not cancel', error);
           } else {
             successHaptic();
+            clearNotesDraft(visit.id);
             navigation.goBack();
           }
         },
@@ -327,12 +361,43 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
             <Text style={t(13.5, 800)}>Visit notes</Text>
             <TextInput
               value={visit.notes ?? ''}
-              onChangeText={(text) => setVisit({ ...visit, notes: text })}
+              onChangeText={onNotesChange}
               placeholder="What did you do during this visit?"
               placeholderTextColor={colors.textFaint}
               multiline
               style={[t(13, 500, colors.textBody), { minHeight: 70, textAlignVertical: 'top' }]}
             />
+            {!!visit.notes && (
+              <Text style={t(11, 400, colors.textFaint)}>
+                {draftRestored ? 'Restored your unsent note · ' : ''}Saved on this phone — sent when you complete the visit
+              </Text>
+            )}
+          </Card>
+        )}
+
+        {(visit.status === 'completed' || visit.status === 'cancelled') && (!!visit.notes || visit.rating != null || !!visit.cancellation_reason) && (
+          <Card style={{ gap: 10 }}>
+            {visit.rating != null && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Patient rating</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Icon name="star" size={12} color={colors.warning} strokeWidth={2} />
+                  <Text style={t(12.5, 700)}>{`${visit.rating}/5`}</Text>
+                </View>
+              </View>
+            )}
+            {visit.status === 'cancelled' && !!visit.cancellation_reason && (
+              <View style={{ gap: 2 }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Cancellation reason</Text>
+                <Text style={t(12.5, 600, colors.textBody)}>{visit.cancellation_reason}</Text>
+              </View>
+            )}
+            {!!visit.notes && (
+              <View style={{ gap: 2 }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Visit notes</Text>
+                <Text style={t(12.5, 600, colors.textBody)}>{visit.notes}</Text>
+              </View>
+            )}
           </Card>
         )}
 
