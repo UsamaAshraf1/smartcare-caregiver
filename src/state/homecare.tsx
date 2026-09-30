@@ -53,6 +53,37 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   refunded: 'Refunded',
 };
 
+/** The job-type catalog a visit's `service_id` points at — `public.home_care_services`, readable by any signed-in user. */
+export type HomeCareService = {
+  id: string;
+  name: string;
+  detail: string | null;
+  fee_aed: number;
+  duration_minutes: number;
+  caregiver_type: string | null;
+};
+
+// The catalog is small and changes rarely (admin-edited), so it's fetched
+// once per app session and shared by every screen that labels a visit —
+// the queue polls every 8s and shouldn't re-fetch this on each poll.
+let servicesPromise: Promise<Record<string, HomeCareService>> | null = null;
+
+/** Every service by id, including inactive ones — an old visit can still point at a service that's since been retired. */
+export function fetchHomeCareServices(): Promise<Record<string, HomeCareService>> {
+  if (!servicesPromise) {
+    servicesPromise = (async () => {
+      const { data, error } = await supabase.from('home_care_services').select('id, name, detail, fee_aed, duration_minutes, caregiver_type');
+      if (error) {
+        console.warn('[homecare] failed to load services:', error.message);
+        servicesPromise = null; // don't cache a failure — let the next caller retry
+        return {};
+      }
+      return Object.fromEntries(((data ?? []) as HomeCareService[]).map((s) => [s.id, s]));
+    })();
+  }
+  return servicesPromise;
+}
+
 /** Dependent/family member a visit is for, when it isn't for the account holder — spec §6. */
 export type FamilyMember = {
   id: string;

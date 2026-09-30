@@ -8,8 +8,8 @@
  * state/homecare.tsx (fetchOpenHomeCareRequests / claimHomeCareVisit) for
  * an org — or a future flow on this one — that actually uses it.
  *
- * Polls every 8s since a push alert for a newly-matched visit isn't wired
- * up yet (spec §7 gap). New cards fade/rise in as they appear (keyed by
+ * Polls every 8s as a backstop to push (a push only arrives on a device
+ * build with notification permission granted). New cards fade/rise in as they appear (keyed by
  * visit.id, so only genuinely new visits animate — existing ones don't
  * re-trigger on every poll).
  */
@@ -21,7 +21,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Card, InlineButton, Screen, ScreenHeader, Tag, Toggle } from '../../components/ui';
 import { FadeInUp, Pulse } from '../../components/motion';
 import { useProfile, CAREGIVER_TYPE_LABEL } from '../../state/profile';
-import { fetchMyCaregiverQueue, HomeCareVisit, PAYMENT_STATUS_LABEL } from '../../state/homecare';
+import { fetchMyCaregiverQueue, fetchHomeCareServices, HomeCareService, HomeCareVisit, PAYMENT_STATUS_LABEL } from '../../state/homecare';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, warningHaptic } from '../../lib/haptics';
 import { colors, t } from '../../theme';
@@ -35,12 +35,13 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'In progress',
 };
 
-function VisitCard({ visit, delay, onPress }: { visit: HomeCareVisit; delay: number; onPress: () => void }) {
+function VisitCard({ visit, service, delay, onPress }: { visit: HomeCareVisit; service?: HomeCareService; delay: number; onPress: () => void }) {
   return (
     <FadeInUp delay={delay}>
       <Card style={{ gap: 10 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ flex: 1, gap: 2 }}>
+            {!!service && <Text style={t(11.5, 800, colors.primary)}>{`${service.name} · ${service.duration_minutes} min`}</Text>}
             <Text style={t(14.5, 800)}>{visit.address}</Text>
             <Text style={t(12, 400, colors.textMuted)}>
               {new Date(visit.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
@@ -63,11 +64,14 @@ function VisitCard({ visit, delay, onPress }: { visit: HomeCareVisit; delay: num
 export default function QueueScreen({ navigation }: Props) {
   const { profile, setOnDuty } = useProfile();
   const [mine, setMine] = useState<HomeCareVisit[]>([]);
+  const [services, setServices] = useState<Record<string, HomeCareService>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [togglingDuty, setTogglingDuty] = useState(false);
 
   const load = useCallback(async () => {
-    setMine(await fetchMyCaregiverQueue());
+    const [queue, catalog] = await Promise.all([fetchMyCaregiverQueue(), fetchHomeCareServices()]);
+    setMine(queue);
+    setServices(catalog);
   }, []);
 
   useEffect(() => {
@@ -125,7 +129,7 @@ export default function QueueScreen({ navigation }: Props) {
           <Text style={t(12.5, 400, colors.textFaint)}>No visits assigned yet. New ones you're matched to will show up here.</Text>
         ) : (
           mine.map((visit, i) => (
-            <VisitCard key={visit.id} visit={visit} delay={i * 40} onPress={() => navigation.navigate('VisitDetail', { visit })} />
+            <VisitCard key={visit.id} visit={visit} service={services[visit.service_id]} delay={i * 40} onPress={() => navigation.navigate('VisitDetail', { visit })} />
           ))
         )}
       </ScrollView>

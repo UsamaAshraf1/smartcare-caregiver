@@ -5,6 +5,8 @@
  * patient-specific, so it's reusable as-is for caregiver accounts.
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '../lib/supabase';
 import { syncPushToken } from '../lib/pushNotifications';
 
@@ -74,7 +76,13 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       refresh();
       if (event === 'SIGNED_IN') syncPushToken();
     });
-    return () => subscription.unsubscribe();
+    // A push that lands while the app is open means a new row in the inbox —
+    // pick it up now instead of waiting for the next pull-to-refresh.
+    const received = Platform.OS === 'web' ? null : Notifications.addNotificationReceivedListener(() => refresh());
+    return () => {
+      subscription.unsubscribe();
+      received?.remove();
+    };
   }, [refresh]);
 
   const markRead = useCallback(async (id: string) => {

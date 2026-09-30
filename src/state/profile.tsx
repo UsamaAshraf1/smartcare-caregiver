@@ -2,7 +2,8 @@
  * Caregiver profile — backed by the same `public.profiles` table the
  * patient app uses. Spec §2 names the exact fields this app is allowed to
  * rely on today: role, caregiver_type, caregiver_active,
- * caregiver_credentials, caregiver_vehicle (plus name for display). What
+ * caregiver_credentials, caregiver_vehicle, phone, email (plus name for
+ * display). What
  * makes a signed-in user a caregiver is the `role` column, not anything the
  * auth layer distinguishes.
  *
@@ -26,6 +27,9 @@ export type CaregiverProfile = {
   caregiver_active: boolean;
   caregiver_credentials: string | null;
   caregiver_vehicle: string | null;
+  /** Read-only here — email is the sign-in identity, and both are set when the admin provisions the account. */
+  phone: string | null;
+  email: string | null;
 };
 
 /** The subset of the profile a caregiver can edit themselves in this app. */
@@ -51,7 +55,17 @@ const ProfileContext = createContext<ProfileContextValue>({
   updateProfile: async () => ({}),
 });
 
-const SELECT_FIELDS = 'user_id, first_name, last_name, role, caregiver_type, caregiver_active, caregiver_credentials, caregiver_vehicle';
+const SELECT_FIELDS = 'user_id, first_name, last_name, role, caregiver_type, caregiver_active, caregiver_credentials, caregiver_vehicle, phone, email';
+
+/**
+ * `create_staff_member` (infra migration 029) creates the auth user with an
+ * email but never copies it onto `profiles.email`, so an admin-provisioned
+ * caregiver's row usually has it null — fall back to the sign-in email,
+ * which is the same address.
+ */
+function withSignInEmail(row: CaregiverProfile, signInEmail: string | undefined): CaregiverProfile {
+  return { ...row, email: row.email ?? signInEmail ?? null };
+}
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<CaregiverProfile | null>(null);
@@ -59,6 +73,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // Set before the first await, so it lands in the same render as the
+    // session flipping to signed-in — RootNavigator (App.tsx) holds on
+    // Splash while this is true, rather than flashing the caregiver tabs
+    // before the role check has anything to check.
+    setLoading(true);
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -68,14 +87,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    setLoading(true);
     setError(null);
     const { data, error: fetchError } = await supabase.from('profiles').select(SELECT_FIELDS).eq('user_id', session.user.id).maybeSingle();
     if (fetchError) {
       console.warn('[profile] failed to load:', fetchError.message);
       setError(fetchError.message);
     } else {
-      setProfile((data as CaregiverProfile) ?? null);
+      setProfile(data ? withSignInEmail(data as CaregiverProfile, session.user.email) : null);
     }
     setLoading(false);
   }, []);
@@ -98,7 +116,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       console.warn('[profile] failed to update:', updateError.message);
       return { error: updateError.message };
     }
-    setProfile(data as CaregiverProfile);
+    setProfile(withSignInEmail(data as CaregiverProfile, session.user.email));
     return {};
   }, []);
 

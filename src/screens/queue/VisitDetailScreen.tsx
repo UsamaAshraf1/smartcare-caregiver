@@ -30,7 +30,7 @@ import * as Location from 'expo-location';
 import { Card, PrimaryButton, OutlineButton, InlineButton, Screen, ScreenHeader, Note, Avatar, Tag } from '../../components/ui';
 import { Pulse } from '../../components/motion';
 import { Icon } from '../../components/Icon';
-import { updateHomeCareVisitStatus, cancelHomeCareVisit, fetchPatientInfo, HomeCareVisit, PatientInfo, PAYMENT_STATUS_LABEL } from '../../state/homecare';
+import { updateHomeCareVisitStatus, cancelHomeCareVisit, fetchPatientInfo, fetchHomeCareServices, HomeCareService, HomeCareVisit, PatientInfo, PAYMENT_STATUS_LABEL } from '../../state/homecare';
 import { openVisitLocationBroadcaster } from '../../lib/visitLocation';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, successHaptic, warningHaptic } from '../../lib/haptics';
@@ -96,6 +96,7 @@ function initialsOf(first: string | null, last: string | null) {
 export default function VisitDetailScreen({ navigation, route }: ScreenProps<'VisitDetail'>) {
   const [visit, setVisit] = useState<HomeCareVisit>(route.params.visit);
   const [patientInfo, setPatientInfo] = useState<PatientInfo | null>(null);
+  const [service, setService] = useState<HomeCareService | null>(null);
   const [busy, setBusy] = useState(false);
   const [locationOn, setLocationOn] = useState(false);
   const broadcasterRef = useRef<ReturnType<typeof openVisitLocationBroadcaster> | null>(null);
@@ -132,6 +133,10 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
     // harmless (same RPC, same visit id) and means this doesn't need its
     // own separate "did I already load this" tracking.
   }, [visit.id, activeLifecycle]);
+
+  useEffect(() => {
+    fetchHomeCareServices().then((catalog) => setService(catalog[visit.service_id] ?? null));
+  }, [visit.service_id]);
 
   useEffect(() => {
     return () => stopLocationTracking();
@@ -235,6 +240,12 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
         <Card style={{ gap: 12 }}>
           <StatusStepper status={visit.status} />
           <View style={{ height: 1, backgroundColor: colors.border }} />
+          {!!service && (
+            <View style={{ gap: 2 }}>
+              <Text style={t(12, 800, colors.primary)}>{`${service.name} · ${service.duration_minutes} min`}</Text>
+              {!!service.detail && <Text style={t(12, 400, colors.textMuted)}>{service.detail}</Text>}
+            </View>
+          )}
           <Text style={t(15, 800)}>{visit.address}</Text>
           {!!visit.address_note && <Text style={t(12.5, 400, colors.textMuted)}>{visit.address_note}</Text>}
           <Text style={t(12.5, 400, colors.textMuted)}>

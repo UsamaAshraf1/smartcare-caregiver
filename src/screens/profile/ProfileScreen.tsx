@@ -105,6 +105,14 @@ export default function ProfileScreen({ navigation }: Props) {
             </View>
             <View style={{ gap: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Email</Text>
+                <Text style={t(12.5, 700)}>{profile?.email ?? '—'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={t(12.5, 400, colors.textMuted)}>Phone</Text>
+                <Text style={t(12.5, 700)}>{profile?.phone ?? '—'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={t(12.5, 400, colors.textMuted)}>Credentials</Text>
                 <Text style={t(12.5, 700)}>{profile?.caregiver_credentials ?? '—'}</Text>
               </View>

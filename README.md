@@ -133,6 +133,33 @@ location history — still flagged "needs a product decision" in the spec
 itself (map provider, ping interval, retention), so still out of scope
 here on purpose, same as the crash-fix pass before it.
 
+## Pre-pilot pass: 2026-09-30
+
+Four gaps from the feature-checklist review, where the backend was ready
+but the app wasn't using it yet:
+
+- **Caregiver-only access** — both apps share one GoTrue instance, so a
+  patient's credentials sign in here too. `RootNavigator` (`App.tsx`) now
+  checks `profiles.role` and shows `NotCaregiverScreen` (with sign-out) for
+  anything that isn't `'caregiver'` — the mirror of the patient app's
+  block screen. Splash holds while the profile loads, so there's no flash
+  of the caregiver tabs first.
+- **Service name on visits** — queue cards and visit detail now show what
+  the job actually is (e.g. "Blood draw at home · 30 min"), from
+  `home_care_services`, fetched once per session and cached
+  (`fetchHomeCareServices` in `state/homecare.tsx`).
+- **Push behaves properly** — a foreground handler
+  (`configureForegroundNotifications`) so pushes that arrive while the app
+  is open actually show; tapping a push (cold start or background) or an
+  inbox row opens that visit, via `lib/notificationRouting.ts`. The visit is
+  resolved from `my_caregiver_queue()` rather than the by-id fetch that 500s
+  on the sandbox; a visit no longer in the queue lands on the inbox instead.
+  The inbox also refreshes the moment a push arrives. Native only — no
+  pushes on web.
+- **Profile phone & email** — read and shown on Profile. `create_staff_member`
+  doesn't copy the email onto `profiles.email`, so it falls back to the
+  sign-in email.
+
 ## Crash fix: en_route → in_progress ("I've arrived")
 
 Tapping "I've arrived" while sharing location could crash the app. Root

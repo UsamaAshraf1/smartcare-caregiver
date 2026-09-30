@@ -5,6 +5,8 @@ export type RootStackParamList = {
   // Auth
   Splash: undefined;
   SignIn: undefined;
+  // Signed in with an account whose profiles.role isn't 'caregiver'
+  NotCaregiver: undefined;
   // Main tabs
   Tabs: { screen?: keyof TabParamList } | undefined;
   // Queue → visit detail. The full visit object, not just its id — see

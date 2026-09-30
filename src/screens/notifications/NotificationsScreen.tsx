@@ -4,6 +4,7 @@ import { Screen, ScreenHeader, Card, IconTile } from '../../components/ui';
 import { FadeInUp, Pulse } from '../../components/motion';
 import { useNotifications } from '../../state/notifications';
 import { tapHaptic } from '../../lib/haptics';
+import { openNotificationTarget } from '../../lib/notificationRouting';
 import { colors, t } from '../../theme';
 
 function timeAgo(iso: string): string {
@@ -78,10 +79,11 @@ export default function NotificationsScreen() {
             <FadeInUp key={n.id} delay={Math.min(i, 6) * 35}>
               <Card
                 onPress={() => {
-                  if (!n.read) {
-                    tapHaptic();
-                    markRead(n.id);
-                  }
+                  tapHaptic();
+                  if (!n.read) markRead(n.id);
+                  // Same destination as tapping the push itself — only
+                  // navigates when the row points at a visit still in the queue.
+                  if (typeof n.data?.visit_id === 'string') openNotificationTarget(n.data);
                 }}
                 style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', opacity: n.read ? 0.6 : 1 }}
               >
