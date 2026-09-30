@@ -30,16 +30,29 @@
  * no backend call that saves notes on their own. The same screen also
  * serves Past visits: a finished visit shows its note, rating or
  * cancellation reason read-only, with no actions.
+ *
+ * Directions (matched / en_route): a map of the caregiver's position and the
+ * patient's pinned destination (infra migration 036), the same rough
+ * distance/ETA the patient sees, and hand-off buttons to Google Maps / Waze /
+ * Apple Maps. Location sharing is foreground-only (background tracking is
+ * descoped), so the card says plainly that it pauses in another app. The
+ * routed road shape/ETA the patient side computes (migration 037) is picked
+ * up by re-reading the queue every 30s while en route, and shown only when
+ * it's fresh.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import { Card, PrimaryButton, OutlineButton, InlineButton, Screen, ScreenHeader, Note, Avatar, Tag } from '../../components/ui';
 import { Pulse } from '../../components/motion';
 import { Icon } from '../../components/Icon';
-import { updateHomeCareVisitStatus, cancelHomeCareVisit, fetchPatientInfo, fetchHomeCareServices, HomeCareService, HomeCareVisit, PatientInfo, PAYMENT_STATUS_LABEL } from '../../state/homecare';
+import { updateHomeCareVisitStatus, cancelHomeCareVisit, fetchPatientInfo, fetchHomeCareServices, fetchMyCaregiverQueue, visitDestination, HomeCareService, HomeCareVisit, PatientInfo, PAYMENT_STATUS_LABEL } from '../../state/homecare';
 import { openVisitLocationBroadcaster } from '../../lib/visitLocation';
 import { loadNotesDraft, saveNotesDraft, clearNotesDraft } from '../../lib/visitNotesDraft';
+import { formatDistanceEta, haversineKm } from '../../lib/eta';
+import { decodePolyline } from '../../lib/polyline';
+import { navApps, openNavigation } from '../../lib/navigation';
+import { VisitMap, mapsAvailable } from '../../components/VisitMap';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, successHaptic, warningHaptic } from '../../lib/haptics';
 import { colors, radius, t } from '../../theme';
@@ -107,6 +120,7 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
   const [service, setService] = useState<HomeCareService | null>(null);
   const [busy, setBusy] = useState(false);
   const [locationOn, setLocationOn] = useState(false);
+  const [myPosition, setMyPosition] = useState<{ latitude: number; longitude: number } | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
   const typedRef = useRef(false);
   const broadcasterRef = useRef<ReturnType<typeof openVisitLocationBroadcaster> | null>(null);
@@ -188,6 +202,7 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
           { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 25 },
           (position) => {
             broadcasterRef.current?.send({ lat: position.coords.latitude, lng: position.coords.longitude, ts: position.timestamp });
+            setMyPosition({ latitude: position.coords.latitude, longitude: position.coords.longitude });
           },
         );
         // The status could have flipped away from en_route while the
@@ -209,6 +224,47 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
       cancelled = true;
     };
   }, [visit.status, visit.id]);
+
+  // Picks up the routed ETA/road shape the patient's tracking screen writes
+  // (migration 037) — only the route fields, so nothing typed here is lost.
+  useEffect(() => {
+    if (visit.status !== 'en_route') return;
+    const refresh = async () => {
+      const latest = (await fetchMyCaregiverQueue()).find((v) => v.id === visit.id);
+      if (!latest) return;
+      setVisit((v) => ({
+        ...v,
+        route_eta_minutes: latest.route_eta_minutes,
+        route_polyline: latest.route_polyline,
+        route_updated_at: latest.route_updated_at,
+      }));
+    };
+    refresh();
+    const interval = setInterval(refresh, 30000);
+    return () => clearInterval(interval);
+  }, [visit.status, visit.id]);
+
+  // Memoized so the map sees a stable coordinate between re-renders.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const destination = useMemo(() => visitDestination(visit), [visit.dest_lat, visit.dest_lng]);
+  const routeFresh = !!visit.route_updated_at && Date.now() - new Date(visit.route_updated_at).getTime() < 3 * 60 * 1000;
+  const roadRoute = useMemo(() => (routeFresh && visit.route_polyline ? decodePolyline(visit.route_polyline) : null), [routeFresh, visit.route_polyline]);
+  const distanceLine =
+    visit.status !== 'en_route'
+      ? null
+      : routeFresh && visit.route_eta_minutes != null
+      ? `About ${visit.route_eta_minutes} min by road`
+      : destination && myPosition
+      ? formatDistanceEta(
+          haversineKm({ lat: myPosition.latitude, lng: myPosition.longitude }, { lat: destination.latitude, lng: destination.longitude }),
+          !!visit.dest_approx,
+        )
+      : null;
+
+  const onNavigate = (app: Parameters<typeof openNavigation>[0]) => {
+    tapHaptic();
+    openNavigation(app, destination, visit.address).catch(() => showAlert('Could not open navigation', undefined));
+  };
 
   const step = NEXT_STATUS[visit.status];
 
@@ -354,6 +410,27 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
             <Pulse size={8} color={locationOn ? colors.success : colors.borderStrong} />
             <Text style={t(12, 700, colors.successDark)}>{locationOn ? 'Sharing your location with the patient' : 'Waiting for location permission'}</Text>
           </View>
+        )}
+
+        {(visit.status === 'matched' || visit.status === 'en_route') && (
+          <Card style={{ gap: 10 }}>
+            <Text style={t(13.5, 800)}>Directions</Text>
+            {!!destination && mapsAvailable() && <VisitMap destination={destination} myPosition={myPosition} route={roadRoute} />}
+            {!!distanceLine && <Text style={t(13, 700, colors.primary)}>{distanceLine}</Text>}
+            {!destination && (
+              <Text style={t(12, 400, colors.textMuted)}>This address has no map pin, so navigation will search the address text. Double-check it on arrival.</Text>
+            )}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {navApps().map(({ app, label }) => (
+                <InlineButton key={app} label={label} onPress={() => onNavigate(app)} variant="outline" height={40} fontSize={12.5} />
+              ))}
+            </View>
+            {visit.status === 'en_route' && (
+              <Text style={t(11, 400, colors.textFaint)}>
+                Your location stops sharing while you're in another app. Come back to SmartCare to keep the patient updated.
+              </Text>
+            )}
+          </Card>
         )}
 
         {visit.status === 'in_progress' && (

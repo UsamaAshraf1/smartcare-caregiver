@@ -160,6 +160,36 @@ but the app wasn't using it yet:
   doesn't copy the email onto `profiles.email`, so it falls back to the
   sign-in email.
 
+## Directions: map, ETA and navigation — 2026-09-30
+
+Built on the patient-side backend work (infra migrations 036 and 037):
+every visit now carries the patient's pinned destination
+(`dest_lat`/`dest_lng`/`dest_approx`), and, while the patient's tracking
+screen is open, a routed ETA and road shape (`route_eta_minutes`,
+`route_polyline`, `route_updated_at`).
+
+While a visit is matched or en route, the visit screen shows a
+**Directions** card:
+
+- **Map** (`src/components/VisitMap.tsx`, `react-native-maps` 1.20.1, same
+  as the patient app): the caregiver's own position, the patient's pin, and
+  the road route when a fresh one exists (under 3 min old), else a dashed
+  straight line. iOS uses Apple Maps (no key). Android needs
+  `GOOGLE_MAPS_ANDROID_API_KEY` at build time (see `app.config.js`); without
+  it the map is skipped on Android rather than showing a blank grid. No map
+  on web.
+- **Distance / ETA** — the routed ETA when fresh, otherwise the same rough
+  estimate the patient sees (`src/lib/eta.ts`, a copy of the patient app's,
+  kept identical on purpose).
+- **Navigate** — Google Maps, Waze and (on iOS) Apple Maps, to the exact pin,
+  or a text-address search for visits booked before pins existed
+  (`src/lib/navigation.ts`).
+- A plain note that location sharing pauses in another app: background
+  tracking is descoped, so this is expected behavior, not a bug.
+
+Adding `react-native-maps` is a native change: a new EAS build is needed
+before this shows up on devices.
+
 ## Past visits and saved notes: 2026-09-30
 
 - **Past visits** — a new screen (`src/screens/queue/PastVisitsScreen.tsx`),

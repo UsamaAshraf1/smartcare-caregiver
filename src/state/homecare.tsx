@@ -44,7 +44,35 @@ export type HomeCareVisit = {
   staff_slot_id: string | null;
   payment_status: PaymentStatus;
   stripe_payment_intent_id: string | null;
+  /**
+   * Where the visit is going — infra migration 036. The patient's own pin,
+   * dropped on the address form and copied onto the visit at booking. Null
+   * for visits booked before that shipped. `dest_approx` marks a server
+   * geocode of the text address rather than a pin (none are written yet).
+   * PostgREST sends `numeric` as a JSON number; `toCoord` below also takes
+   * a string, in case that ever changes.
+   */
+  dest_lat?: number | string | null;
+  dest_lng?: number | string | null;
+  dest_approx?: boolean;
+  /**
+   * Routed ETA + road shape (Google encoded polyline) — infra migration 037.
+   * Written by the *patient's* tracking screen via care-api, about once a
+   * minute, only while that screen is open and the visit is en_route — so
+   * it's often absent or stale here. Treat as a bonus over this app's own
+   * rough ETA, never as the source of truth.
+   */
+  route_eta_minutes?: number | null;
+  route_polyline?: string | null;
+  route_updated_at?: string | null;
 };
+
+/** The visit's destination as a map coordinate, or null when it has no pin. */
+export function visitDestination(visit: HomeCareVisit): { latitude: number; longitude: number } | null {
+  const lat = visit.dest_lat == null ? NaN : Number(visit.dest_lat);
+  const lng = visit.dest_lng == null ? NaN : Number(visit.dest_lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { latitude: lat, longitude: lng } : null;
+}
 
 export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   pending: 'Payment pending',
