@@ -10,47 +10,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
 import { Screen, ScreenHeader, Card, PrimaryButton } from '../../components/ui';
 import { Field } from '../../components/forms';
-import { FadeInUp } from '../../components/motion';
+import { VitalsEntryCard } from '../../components/VitalsEntryCard';
 import { fetchVisitVitals, recordVisitVitals, VisitVitals } from '../../state/vitals';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, successHaptic, warningHaptic } from '../../lib/haptics';
 import { colors, t } from '../../theme';
 import type { ScreenProps } from '../../navigation/types';
-
-function VitalRow({ label, value, unit }: { label: string; value: number | null; unit: string }) {
-  if (value === null || value === undefined) return null;
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={t(12.5, 400, colors.textMuted)}>{label}</Text>
-      <Text style={t(12.5, 700)}>{`${value} ${unit}`}</Text>
-    </View>
-  );
-}
-
-function EntryCard({ entry, delay }: { entry: VisitVitals; delay: number }) {
-  return (
-    <FadeInUp delay={delay}>
-      <Card style={{ gap: 8 }}>
-        <Text style={t(11.5, 700, colors.textFaint)}>
-          {new Date(entry.recorded_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-        </Text>
-        <View style={{ gap: 4 }}>
-          {(entry.blood_pressure_systolic || entry.blood_pressure_diastolic) && (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={t(12.5, 400, colors.textMuted)}>Blood pressure</Text>
-              <Text style={t(12.5, 700)}>{`${entry.blood_pressure_systolic ?? '—'}/${entry.blood_pressure_diastolic ?? '—'} mmHg`}</Text>
-            </View>
-          )}
-          <VitalRow label="Heart rate" value={entry.heart_rate} unit="bpm" />
-          <VitalRow label="Temperature" value={entry.temperature_c} unit="°C" />
-          <VitalRow label="SpO2" value={entry.spo2} unit="%" />
-          <VitalRow label="Respiratory rate" value={entry.respiratory_rate} unit="breaths/min" />
-        </View>
-        {!!entry.notes && <Text style={t(12.5, 400, colors.textBody)}>{entry.notes}</Text>}
-      </Card>
-    </FadeInUp>
-  );
-}
 
 export default function VitalsScreen({ navigation, route }: ScreenProps<'Vitals'>) {
   const { visitId } = route.params;
@@ -156,7 +121,7 @@ export default function VitalsScreen({ navigation, route }: ScreenProps<'Vitals'
           <Text style={t(13, 700, colors.textBody)}>History</Text>
           {!loading && entries.length === 0 && <Text style={t(12.5, 400, colors.textFaint)}>No vitals recorded for this visit yet.</Text>}
           {entries.map((entry, i) => (
-            <EntryCard key={entry.id} entry={entry} delay={i * 40} />
+            <VitalsEntryCard key={entry.id} entry={entry} delay={i * 40} />
           ))}
         </View>
       </ScrollView>

@@ -28,8 +28,8 @@
  * (lib/visitNotesDraft.ts) and restored if the caregiver leaves and comes
  * back — the server only receives it with "Complete visit", since there's
  * no backend call that saves notes on their own. The same screen also
- * serves Past visits: a finished visit shows its note, rating or
- * cancellation reason read-only, with no actions.
+ * serves Past visits: a finished visit shows its note, rating, recorded
+ * vitals or cancellation reason read-only, with no actions.
  *
  * Directions (matched / en_route): a map of the caregiver's position and the
  * patient's pinned destination (infra migration 036), the same rough
@@ -53,6 +53,8 @@ import { formatDistanceEta, haversineKm } from '../../lib/eta';
 import { decodePolyline } from '../../lib/polyline';
 import { navApps, openNavigation } from '../../lib/navigation';
 import { VisitMap, mapsAvailable } from '../../components/VisitMap';
+import { VitalsEntryCard } from '../../components/VitalsEntryCard';
+import { fetchVisitVitals, VisitVitals } from '../../state/vitals';
 import { showAlert } from '../../components/AppAlert';
 import { tapHaptic, successHaptic, warningHaptic } from '../../lib/haptics';
 import { colors, radius, t } from '../../theme';
@@ -122,6 +124,7 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
   const [locationOn, setLocationOn] = useState(false);
   const [myPosition, setMyPosition] = useState<{ latitude: number; longitude: number } | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [pastVitals, setPastVitals] = useState<VisitVitals[]>([]);
   const typedRef = useRef(false);
   const broadcasterRef = useRef<ReturnType<typeof openVisitLocationBroadcaster> | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
@@ -171,6 +174,13 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
     // when the caregiver last left this screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Vitals are recorded only while in progress (RLS insert rule), but they're
+  // a permanent record of the visit — show them once it's completed too.
+  useEffect(() => {
+    if (visit.status !== 'completed') return;
+    fetchVisitVitals(visit.id).then(setPastVitals);
+  }, [visit.status, visit.id]);
 
   const onNotesChange = (text: string) => {
     typedRef.current = true;
@@ -476,6 +486,15 @@ export default function VisitDetailScreen({ navigation, route }: ScreenProps<'Vi
               </View>
             )}
           </Card>
+        )}
+
+        {visit.status === 'completed' && pastVitals.length > 0 && (
+          <View style={{ gap: 10 }}>
+            <Text style={t(13, 700, colors.textBody)}>{`Vitals recorded (${pastVitals.length})`}</Text>
+            {pastVitals.map((entry, i) => (
+              <VitalsEntryCard key={entry.id} entry={entry} delay={Math.min(i, 6) * 30} />
+            ))}
+          </View>
         )}
 
         {visit.status === 'in_progress' && (
