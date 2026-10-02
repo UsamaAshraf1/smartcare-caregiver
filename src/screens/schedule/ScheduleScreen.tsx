@@ -7,7 +7,7 @@
  * own id), and a read-only list of the slots that produced.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, Animated } from 'react-native';
 import { Screen, ScreenHeader, Card, Chip, Tag, PrimaryButton, Note } from '../../components/ui';
 import { Field } from '../../components/forms';
 import { Icon } from '../../components/Icon';
@@ -53,9 +53,12 @@ function TemplateRow({ template, onToggleActive, onDelete }: { template: Schedul
         <Text style={t(11.5, 700, template.active ? colors.textMuted : colors.primary)}>{template.active ? 'Pause' : 'Resume'}</Text>
       </Pressable>
       <Pressable onPress={onDelete} onPressIn={press.onPressIn} onPressOut={press.onPressOut} hitSlop={8}>
-        <View style={press.style}>
+        {/* Must be Animated.View: press.style carries an Animated.Value, which a
+            plain View rejects on device ("Transform with key of scale must be a
+            number") — web tolerates it, so this only crashed on phones. */}
+        <Animated.View style={press.style}>
           <Icon name="trash" size={16} color={colors.dangerDark} strokeWidth={2} />
-        </View>
+        </Animated.View>
       </Pressable>
     </View>
   );
@@ -213,7 +216,7 @@ export default function ScheduleScreen({ navigation }: ScreenProps<'Schedule'>) 
           <Text style={t(13, 700, colors.textBody)}>Upcoming slots</Text>
           {!loading && slots.length === 0 && <Text style={t(12.5, 400, colors.textFaint)}>No upcoming slots yet — generate some above.</Text>}
           {slots.map((slot, i) => {
-            const style = SLOT_STATUS_STYLE[slot.status];
+            const style = SLOT_STATUS_STYLE[slot.status] ?? { label: slot.status, bg: colors.fill, color: colors.textMuted };
             return (
               <FadeInUp key={slot.id} delay={Math.min(i, 8) * 30}>
                 <Card style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
